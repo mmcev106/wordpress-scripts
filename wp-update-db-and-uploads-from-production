@@ -1,0 +1,24 @@
+#!/bin/sh
+
+newUrl=`wp option get siteurl`
+if [ $? -ne 0 ]; then
+	echo
+    echo "Could not detect site url.  Are you inside a wordpress directory?"
+    exit
+fi
+
+sourceServer="ori12lp"
+dumpFilename=`ssh -q $sourceServer "PATH=/usr/bin/mysqldump:$PATH wp --path=/app001/www/tin db export --porcelain"`
+ssh -q $sourceServer gzip $dumpFilename
+scp -q $sourceServer:$dumpFilename.gz /tmp
+ssh -q $sourceServer "rm $dumpFilename.gz"
+
+gunzip /tmp/$dumpFilename.gz
+change-wordpress-url-in-database /tmp/$dumpFilename $newUrl /tmp/$dumpFilename.local
+rm /tmp/$dumpFilename
+
+wp db import /tmp/$dumpFilename.local
+rm /tmp/$dumpFilename.local
+
+# Sync uploads
+rsync -a --delete -e "ssh -q" $sourceServer:`pwd`/wp-content/uploads/ wp-content/uploads/
