@@ -7,7 +7,17 @@ if [ $? -ne 0 ]; then
     exit
 fi
 
-sourceServer="ori12lp"
+hostname=`hostname`
+serverPrefix=${hostname::${#hostname}-1}
+environment=${hostname: -1}
+
+if [ $environment == 'p' ]; then
+	echo "You should not run this script in a production environment."
+	exit
+fi
+
+sourceServer=$serverPrefix'p'
+
 dumpFilename=`ssh -q $sourceServer "PATH=/usr/bin/mysqldump:$PATH wp --path=/app001/www/tin db export --porcelain"`
 ssh -q $sourceServer gzip $dumpFilename
 scp -q $sourceServer:$dumpFilename.gz /tmp
@@ -20,5 +30,6 @@ rm /tmp/$dumpFilename
 wp db import /tmp/$dumpFilename.local
 rm /tmp/$dumpFilename.local
 
-# Sync uploads
+# Sync files
 rsync -a --delete -e "ssh -q" $sourceServer:`pwd`/wp-content/uploads/ wp-content/uploads/
+rsync -a --delete -e "ssh -q" $sourceServer:`pwd`/wp-content/plugins/ wp-content/plugins/
