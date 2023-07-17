@@ -1,0 +1,59 @@
+#!/bin/bash
+
+set -e
+
+hostname=`hostname`
+serverPrefix=${hostname::${#hostname}-1}
+environment=${hostname: -1}
+
+if [ $environment == 'p' ]; then
+	echo "You should not run this script in a production environment."
+	exit
+fi
+
+
+updateConfigPath=.update-config.sh
+
+if [ ! -f $updateConfigPath ]; then
+
+	# Assume we're in a theme dir, and try again from the WP root
+	cd `realpath .`/../../..
+
+	if [ ! -f $updateConfigPath ]; then
+		echo "You must create a $updateConfigPath file that sets the 'server' and 'site' variables."
+		exit
+	fi
+fi
+
+source $updateConfigPath
+
+if [ -z $server ]; then
+	echo "The 'server' variable must be set in $updateConfigPath"
+	exit
+fi
+
+if [ -z $site ]; then
+	echo "The 'site' variable must be set in $updateConfigPath"
+	exit
+fi
+
+if [ -z $localUrl ]; then
+	echo "The 'localUrl' variable must be set in $updateConfigPath"
+	exit
+fi
+
+mkdir -p database-backups
+dumpPath=database-backups/$site-db-backup-`timestamp`.sql
+backup-wordpress-db "$server" "$site" "$dumpPath"
+
+echo 'Updating URL in DB dump...'
+change-wordpress-url-in-database $dumpPath $localUrl $dumpPath.local
+
+echo 'Importing DB dump...'
+wp db import $dumpPath.local
+
+echo 'Syncing files...'
+rsync -a -e 'ssh -q' $server:/app001/www/$site/wp-content/uploads/ wp-content/uploads/
+# We can't sync plugins, or we could overwrite plugins in development (like the artifact library)
+
+wp rewrite flush

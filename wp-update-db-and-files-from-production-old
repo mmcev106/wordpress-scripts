@@ -7,6 +7,8 @@ if [ $? -ne 0 ]; then
     exit
 fi
 
+echo New Url: $newUrl
+
 hostname=`hostname`
 serverPrefix=${hostname::${#hostname}-1}
 environment=${hostname: -1}
@@ -17,19 +19,30 @@ if [ $environment == 'p' ]; then
 fi
 
 sourceServer=$serverPrefix'p'
+pwd=`pwd`
 
-dumpFilename=`ssh -q $sourceServer "PATH=/usr/bin/mysqldump:$PATH wp --path=/app001/www/tin db export --porcelain"`
+cmd="ssh -q $sourceServer 'source .bash_profile; wp --path=$pwd db export --porcelain'"
+echo 'Creating DB dump using this command:'
+echo $cmd
+dumpFilename=`$cmd`
+
+echo Dump created: $dumpFilename
+exit
+
+echo Unzipping $dumpFilename...
 ssh -q $sourceServer gzip $dumpFilename
 scp -q $sourceServer:$dumpFilename.gz /tmp
 ssh -q $sourceServer "rm $dumpFilename.gz"
 
+echo 'Updating URL in DB dump...'
 gunzip /tmp/$dumpFilename.gz
 change-wordpress-url-in-database /tmp/$dumpFilename $newUrl /tmp/$dumpFilename.local
 rm /tmp/$dumpFilename
 
+echo 'Importing DB dump...'
 wp db import /tmp/$dumpFilename.local
 rm /tmp/$dumpFilename.local
 
-# Sync files
+echo 'Syncing files...'
 rsync -a --delete -e "ssh -q" $sourceServer:`pwd`/wp-content/uploads/ wp-content/uploads/
 rsync -a --delete -e "ssh -q" $sourceServer:`pwd`/wp-content/plugins/ wp-content/plugins/
